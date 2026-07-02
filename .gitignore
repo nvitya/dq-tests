@@ -6,6 +6,9 @@
 *.lo
 *.o
 *.obj
+*.dqm
+*.dqm_if
+*.bc
 
 # Precompiled Headers
 *.gch
@@ -40,6 +43,7 @@
 *.app
 
 # Build directories
+.dqbuild/
 build/
 Build/
 build-*/
