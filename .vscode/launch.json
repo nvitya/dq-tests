@@ -19,6 +19,11 @@
           "description": "Enable pretty-printing",
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
+        },
+        {
+          "description": "Load DQ pretty-printers",
+          "text": "source ${workspaceFolder}/.gdb/dq_printers.py",
+          "ignoreFailures": false
         }
       ]
     }

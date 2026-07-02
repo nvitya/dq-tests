@@ -1,0 +1,17 @@
+use print
+use ./file
+
+function *Main() -> int:
+  PrintLn('DQ File IO Test')
+
+  var s : str
+  var f <- OFile()
+  f.Open('fileiotest.dq','r')
+
+  PrintLn('File open ok.')
+  s = f.ReadText()
+  PrintLn('file contents:')
+  PrintLn(s)
+
+  return 0
+endfunc

@@ -1,0 +1,4 @@
+
+function TestFunc1() -> int:
+  result = 5
+endfunc
