@@ -1,9 +1,5 @@
 // DQ File handling
 
-use rtl/exception reexport  // reexport required for the current (v0.26.0) dq-comp
-                            // in the case the users of this module not uses rtl/exception then the module load error will be presented
-                            // hopefully this will be fixed later
-
 object EFileError(Exception):
 endobj
 
@@ -17,19 +13,220 @@ object OFile:
   function Open(afname : strview, afmode : strview)
   function Close()
   function Opened() -> bool
-  function Size() -> uint64
+  function Size() -> int64
 
+  function Seek(apos : int64)
+  function CurPos() -> int64
+
+  function Read(adest : pointer, asize : int64) -> int64
   function ReadText() -> str
+  function ReadBytes() -> [*]byte
+
+  function Write(asrc : pointer, asize : int64)
+  function WriteText(atxt : strview)
+  function WriteBytes(abytes : []byte)
+
+  property name     : str    read m_filename
+  property opened   : bool   read Opened
+  property position : int64  read CurPos  write Seek
+  property size     : int64  read Size
 endobj
 
+
+function FileRead(afname : strview, dataptr : pointer, maxlen : int64) -> int64
+function FileReadText(afname : strview) -> str
+function FileReadBytes(afname : strview) -> [*]byte
+
+function FileWrite(afname : strview, dataptr : pointer, datalen : int64)
+function FileWriteText(afname : strview, adata : strview)
+function FileWriteBytes(afname : strview, adata : []byte)
+
+function FileExists(afname : strview) -> bool
+
+function DirExists(adir : strview) -> bool
+function DirCreate(adir : strview, aforce : bool = false)
+function DirRemove(adir : strview)
+
+function PathTranslateSeparators(apath : str) -> str
+function PathDirName(apath : str) -> str
+function PathFileName(apath : str) -> str
+function PathFileExt(apath : str) -> str
+
 implementation
+
 
 function libc_fopen(filename : ^cchar, mode : ^cchar) -> pointer          [[external('fopen')]]
 function libc_fclose(stream : pointer) -> int                             [[external('fclose')]]
 function libc_fseek(stream : pointer, offset : int, origin : int) -> int  [[external('fseek')]]
 function libc_ftell(stream : pointer) -> int                              [[external('ftell')]]
-function libc_fread(ptr : pointer, size : uint, count : uint, stream : pointer) -> uint  [[external('fread')]]
+function libc_fread(ptr : pointer, size : uint, count : uint, stream : pointer) -> uint   [[external('fread')]]
+function libc_fwrite(ptr : pointer, size : uint, count : uint, stream : pointer) -> uint  [[external('fwrite')]]
+function libc_access(pathname : ^cchar, mode : int) -> int                [[external('access')]]
+function libc_mkdir(pathname : ^cchar, mode : uint) -> int                [[external('mkdir')]]
+function libc_rmdir(pathname : ^cchar) -> int                             [[external('rmdir')]]
+function libc_opendir(name : ^cchar) -> pointer                           [[external('opendir')]]
+function libc_closedir(dirp : pointer) -> int                             [[external('closedir')]]
 
+//--------------------------------------------------------------------------
+
+const DIR_MODE : uint = 511
+const ACCESS_EXISTS : int = 0
+
+function FileExists(afname : strview) -> bool:
+  if afname == '':
+    return false
+  endif
+
+  if DirExists(afname):
+    return false
+  endif
+
+  var path : str = afname
+  return libc_access(^cchar(&path[0]), ACCESS_EXISTS) == 0
+endfunc
+
+function DirExists(adir : strview) -> bool:
+  if adir == '':
+    return false
+  endif
+
+  var path : str = adir
+  var dir : pointer = libc_opendir(^cchar(&path[0]))
+  if dir == null:
+    return false
+  endif
+
+  libc_closedir(dir)
+  return true
+endfunc
+
+function CreateOneDir(adir : strview):
+  if adir == '':
+    return
+  endif
+
+  var path : str = adir
+
+  if DirExists(path):
+    return
+  endif
+
+  if libc_mkdir(^cchar(&path[0]), DIR_MODE) <> 0:
+    if not DirExists(path):
+      raise EFileError('Directory create error: {}', [path])
+    endif
+  endif
+endfunc
+
+function DirCreate(adir : strview, aforce : bool = false):
+  if adir == '':
+    raise EFileError('DirCreate: empty directory name')
+  endif
+
+  var path : str = adir
+
+  if not aforce:
+    if DirExists(path):
+      raise EFileError('DirCreate: directory already exists: {}', [path])
+    endif
+
+    if libc_mkdir(^cchar(&path[0]), DIR_MODE) <> 0:
+      if not DirExists(path):
+        raise EFileError('Directory create error: {}', [path])
+      endif
+    endif
+    return
+  endif
+
+  for i : int = 0 count path.length:
+    if path[i] == '/':
+      if i > 0:
+        CreateOneDir(path[:i])
+      endif
+    endif
+  endfor
+
+  CreateOneDir(path)
+endfunc
+
+function DirRemove(adir : strview):
+  if adir == '':
+    raise EFileError('DirRemove: empty directory name')
+  endif
+
+  var path : str = adir
+  if not DirExists(path):
+    raise EFileError('DirRemove: directory does not exist: {}', [path])
+  endif
+
+  if libc_rmdir(^cchar(&path[0])) <> 0:
+    if DirExists(path):
+      raise EFileError('Directory remove error: {}', [path])
+    endif
+  endif
+endfunc
+
+//--------------------------------------------------------------------------
+
+function PathTranslateSeparators(apath : str) -> str:
+  result = apath
+
+  for i : int = 0 count result.length:
+    if result[i] == char(92):
+      result[i] = '/'
+    endif
+  endfor
+endfunc
+
+function PathLastSeparator(apath : str) -> int:
+  for i : int = int(apath.length) - 1 downto 0:
+    if apath[i] == '/':
+      return i
+    endif
+  endfor
+
+  return -1
+endfunc
+
+function PathDirName(apath : str) -> str:
+  var path : str = PathTranslateSeparators(apath)
+  var sep : int = PathLastSeparator(path)
+
+  if sep < 0:
+    return ''
+  endif
+
+  if sep == 0:
+    return '/'
+  endif
+
+  return path[:sep]
+endfunc
+
+function PathFileName(apath : str) -> str:
+  var path : str = PathTranslateSeparators(apath)
+  var sep : int = PathLastSeparator(path)
+
+  if sep < 0:
+    return path
+  endif
+
+  return path[sep + 1:]
+endfunc
+
+function PathFileExt(apath : str) -> str:
+  var fname : str = PathFileName(apath)
+
+  for i : int = int(fname.length) - 1 downto 1:
+    if fname[i] == '.':
+      return fname[i:]
+    endif
+  endfor
+
+  return ''
+endfunc
+
+//--------------------------------------------------------------------------
 
 function OFile.*Create():
 endfunc
@@ -72,7 +269,28 @@ const SEEK_SET : int = 0
 const SEEK_CUR : int = 1
 const SEEK_END : int = 2
 
-function OFile.Size() -> uint64:
+function OFile.Seek(apos : int64):
+  if not Opened():
+    raise EFileError('OFile.Seek: file is not open')
+  endif
+
+  if @.libc_fseek(m_fhandle, apos, @.SEEK_SET) <> 0:
+    raise EFileError('OFile.Seek error')
+  endif
+endfunc
+
+function OFile.CurPos() -> int64:
+  if not Opened():
+    raise EFileError('OFile.CurPos: file is not open')
+  endif
+
+  result = @.libc_ftell(m_fhandle)
+  if result < 0:
+    raise EFileError('OFile.CurPos error')
+  endif
+endfunc
+
+function OFile.Size() -> int64:
   if not Opened():
     raise EFileError('OFile.Size: file is not open')
   endif
@@ -95,22 +313,133 @@ function OFile.Size() -> uint64:
     raise EFileError('OFile.Size: fseek restore failed')
   endif
 
-  return uint64(endpos)
+  return endpos
+endfunc
+
+function OFile.Read(adest : pointer, asize : int64) -> int64:
+  if not Opened():
+    raise EFileError('OFile.Read: file is not open')
+  endif
+
+  if asize < 0:
+    raise EFileError('Invalid read size: {}', [asize])
+  endif
+  result = @.libc_fread(adest, 1, asize, m_fhandle)
+  if result < 0:
+    raise EFileError('File read error')
+  endif
 endfunc
 
 function OFile.ReadText() -> str:
-  var flen : uint64 = Size()
+  if not Opened():
+    raise EFileError('OFile.ReadText: file is not open')
+  endif
+
+  var flen : int64 = Size()
   if flen <= 0:
     return ''
   endif
 
-  result = ''
+  result = ''  // to avoid uninitialized variable access
   result.SetLength(flen, 0)
-  var r : int = @.libc_fread(&result[0], 1, flen, m_fhandle)
-  if r <= 0:
-    raise EFileError('File read error')
-  endif
+  var r : int64 = Read(&result[0], flen)
   if r <> flen:
     result.SetLength(r, 0)
   endif
+endfunc
+
+function OFile.ReadBytes() -> [*]byte:
+  if not Opened():
+    raise EFileError('OFile.ReadBytes: file is not open')
+  endif
+
+  var flen : int64 = Size()
+  if flen <= 0:
+    return []
+  endif
+
+  result = []  // to avoid uninitialized variable access
+  result.SetLength(flen)
+  var r : int64 = Read(&result[0], flen)
+  if r <> flen:
+    result.SetLength(r)
+  endif
+endfunc
+
+
+function OFile.Write(asrc : pointer, asize : int64):
+  if not Opened():
+    raise EFileError('OFile.Write: file is not open')
+  endif
+  if asize < 0:
+    raise EFileError('Invalid write size: {}', [asize])
+  endif
+  var r : int64 = @.libc_fwrite(asrc, 1, asize, m_fhandle)
+  if r <> asize:
+    raise EFileError('File write error: {} <> {}', [r, asize])
+  endif
+endfunc
+
+function OFile.WriteText(atxt : strview):
+  if not Opened():
+    raise EFileError('OFile.WriteText: file is not open')
+  endif
+  if atxt.length <= 0:
+    return
+  endif
+  Write(&atxt[0], atxt.length)
+endfunc
+
+function OFile.WriteBytes(abytes : []byte):
+  if not Opened():
+    raise EFileError('OFile.WriteBytes: file is not open')
+  endif
+  if abytes.length <= 0:
+    return
+  endif
+  Write(&abytes[0], abytes.length)
+endfunc
+
+//--------------------------------------------------------------------------
+
+function FileRead(afname : strview, dataptr : pointer, maxlen : int64) -> int64:
+  var f <- OFile()
+  f.Open(afname, 'rb')
+  result = f.Read(dataptr, maxlen)
+  f.Close()
+endfunc
+
+function FileReadText(afname : strview) -> str:
+  var f <- OFile()
+  f.Open(afname, 'r')
+  result = f.ReadText()
+  f.Close()
+endfunc
+
+function FileReadBytes(afname : strview) -> [*]byte:
+  var f <- OFile()
+  f.Open(afname, 'rb')
+  result = f.ReadBytes()
+  f.Close()
+endfunc
+
+function FileWrite(afname : strview, dataptr : pointer, datalen : int64):
+  var f <- OFile()
+  f.Open(afname, 'wb')
+  f.Write(dataptr, datalen)
+  f.Close()
+endfunc
+
+function FileWriteText(afname : strview, adata : strview):
+  var f <- OFile()
+  f.Open(afname, 'w')
+  f.WriteText(adata)
+  f.Close()
+endfunc
+
+function FileWriteBytes(afname : strview, adata : []byte):
+  var f <- OFile()
+  f.Open(afname, 'w')
+  f.WriteBytes(adata)
+  f.Close()
 endfunc
