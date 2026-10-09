@@ -1,0 +1,26 @@
+use print
+use ./oshw_i2c
+use ./sensor_sht45
+
+const I2C_DEV : rostr = "/dev/i2c-1"
+
+var i2c    : OHwI2c
+var sensor : OSensorSht45
+
+func *Main():
+    PrintLn('RV64 I2C Test')
+
+    i2c = new OHwI2c()
+    if not i2c.Init(I2C_DEV):
+        raise Exception('Error initializing i2c device "{}"', [I2C_DEV])
+    endif
+
+    PrintLn('I2C device "{}" opened.', [i2c.devname])
+
+    sensor = new OSensorSht45()
+    sensor.Init(i2c, 0x44)  // also makes a test measurment
+
+    PrintLn('T = {:.2f}, RH = {:.2f}', [sensor.t_celsius, sensor.rh_percent])
+
+    PrintLn('Exiting now.')
+endfunc

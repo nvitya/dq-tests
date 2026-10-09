@@ -1,0 +1,33 @@
+
+use ./oshw_i2c
+
+object ESensor(Exception):
+endobject
+
+object OI2cSensorBase:
+    devaddr     : uint8   = 0
+    initialized : bool    = false
+    i2c         : OHwI2c  = nil
+
+    func Init(ai2c : OHwI2c, adevaddr : byte) [[virtual]] ..
+    func Measure()  [[virtual]] ..
+endobject
+
+
+implementation
+
+
+func OI2cSensorBase.Init(ai2c : OHwI2c, adevaddr : byte):
+    i2c = ai2c;
+	if adevaddr <= 0x7F:
+	    devaddr = adevaddr
+	endif
+
+	if i2c == nil  or not i2c.initialized:
+        raise ESensor('Sensor initialization error: i2c is not initialized')
+    endif
+endfunc
+
+func OI2cSensorBase.Measure():
+    // should be overridden    
+endfunc

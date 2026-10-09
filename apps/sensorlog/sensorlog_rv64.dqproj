@@ -1,0 +1,9 @@
+
+main = 'sensorlog_rv64.dq'
+
+target  = 'rv64g-linux'
+sysroot = '/lindata/dev_riscv/sysroot_riscv64_trixie'
+
+optlevel  = 0
+debuginfo = true
+lto       = false

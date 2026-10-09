@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "RV64: build, upload, and start",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "external",
+            "gdbTarget": "10.90.13.74:2345",
+            "gdbPath": "/usr/bin/gdb-multiarch",
+            "objdumpPath": "/usr/bin/objdump",
+            "executable": "${workspaceFolder}/rv64_test",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build RV64 DQ test",
+            "runToEntryPoint": "",
+            "overrideLaunchCommands": [
+                "remote put ${workspaceFolder}/rv64_test rv64_test",
+                "set remote exec-file rv64_test"
+            ],
+            "postStartSessionCommands": [
+                "run"
+            ],
+            "showDevDebugOutput": "raw"
+        }
+    ]
+}

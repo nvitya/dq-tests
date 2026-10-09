@@ -1,0 +1,66 @@
+use print
+use time
+use ./oshw_i2c
+use ./sensor_base
+
+object OSensorSht45(OI2cSensorBase):
+    t_celsius   : float32 = 0
+    rh_percent  : float32 = 0
+
+    tbuf : [8]byte
+    rbuf : [8]byte
+
+    func *Create():
+        inherited Create()
+        devaddr = 0x44
+    endfunc
+
+    func Init(ai2c : OHwI2c, adevaddr : byte)  [[override]] ..
+    func Measure()  [[override]] ..
+endobject
+
+
+implementation
+
+
+func OSensorSht45.Init(ai2c : OHwI2c, adevaddr : byte)  [[override]]:
+    inherited Init(ai2c, adevaddr)
+    initialized = true;
+
+    // just make a test measurement
+    Measure()
+
+    @.PrintLn('I2C Sensor SHT45 initialized.');
+endfunc
+
+func OSensorSht45.Measure() [[override]]
+:
+	if i2c == nil  or not i2c.initialized:
+        raise ESensor('SHT45: i2c is not initialized')
+    endif
+
+    tbuf[0] = 0xFD
+    var r : int = i2c.Write(devaddr, 0, %tbuf[0], 1)
+    //if r < 0: ..  // ignore this error
+
+    @time.SleepMillis(10);  // 1 ms is too few !
+
+    r = i2c.Read(devaddr, 0, %rbuf[0], 6)
+    if r < 0:
+        raise ESensor('SHT45: error reading sensor data!')
+    endif
+
+    var t_ticks : int = (rbuf[0] << 8) + rbuf[1]
+    //int checksum_t = rbuf[2];
+    var rh_ticks : int = (rbuf[3] << 8) + rbuf[4]
+    //int checksum_rh = rbuf[5];
+
+    t_celsius  = -45 + (175 * t_ticks) / 65535
+    rh_percent =  -6 + (125 * rh_ticks) / 65535
+    if rh_percent > 100:
+        rh_percent = 100
+    endif
+    if rh_percent < 0:
+        rh_percent = 0
+    endif
+endfunc
